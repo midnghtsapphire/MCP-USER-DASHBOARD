@@ -1,14 +1,96 @@
 {
   "name": "mct-user-dashboard",
   "version": "1.0.0",
-  "description": "MCT module for USER-DASHBOARD",
-  "main": "dist/index.js",
+  "description": "User Dashboard for managing MCP interactions",
+  "main": "src/index.ts",
   "scripts": {
+    "start": "ts-node src/index.ts",
     "build": "tsc",
-    "dev": "tsx watch src/index.ts",
-    "test": "jest",
-    "setup": "npm install && npx drizzle-kit push:pg"
+    "docker": "docker build -t mct-user-dashboard ."
   },
-  "keywords": ["mct", "api", "microservice"],
-  "license": "MIT"
+  "dependencies": {
+    "express": "^4.17.1",
+    "typescript": "^4.0.5",
+    "ts-node": "^9.0.0",
+    "body-parser": "^1.19.0",
+    "cors": "^2.8.5",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "mongoose": "^5.10.9",
+    "dotenv": "^8.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^14.14.6",
+    "@types/express": "^4.17.9",
+    "@types/mongoose": "^5.10.3"
+  }
 }
+### `src/index.ts`
+import express from 'express';
+import bodyParser from 'body-parser';
+import cors from 'cors';
+import { routes } from './api/routes';
+const app = express();
+const port = process.env.PORT || 3000;
+app.use(cors());
+app.use(bodyParser.json());
+routes(app);
+app.listen(port, () => {
+  console.log(`Server running on http://localhost:${port}`);
+});
+### `src/api/routes.ts`
+import { Express } from 'express';
+import { userHandler } from '../services/userService';
+export function routes(app: Express) {
+  app.get('/users', userHandler.getUsers);
+  app.post('/users', userHandler.createUser);
+  app.put('/users/:id', userHandler.updateUser);
+  app.delete('/users/:id', userHandler.deleteUser);
+}
+### `src/db/schema.ts`
+import mongoose from 'mongoose';
+const userSchema = new mongoose.Schema({
+  username: { type: String, required: true },
+  email: { type: String, required: true },
+  created_at: { type: Date, default: Date.now }
+});
+export const User = mongoose.model('User', userSchema);
+### `src/mct/server.ts`
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import * as tools from './tools';
+const server = new McpServer({
+  name: "user-dashboard-mcp-server",
+  version: "1.0.0"
+});
+server.registerTool('getUserData', tools.getUserData);
+server.registerTool('updateUserData', tools.updateUserData);
+export default server;
+### `src/mct/tools.ts`
+import { User } from '../db/schema';
+export async function getUserData(userId: string) {
+  return await User.findById(userId);
+}
+export async function updateUserData(userId: string, data: any) {
+  return await User.findByIdAndUpdate(userId, data);
+}
+### `src/services/userService.ts`
+import { Request, Response } from 'express';
+import { User } from '../db/schema';
+export const userHandler = {
+  getUsers: async (req: Request, res: Response) => {
+    const users = await User.find();
+    res.send(users);
+  },
+  createUser: async (req: Request, res: Response) => {
+    const newUser = new User(req.body);
+    await newUser.save();
+    res.status(201).send(newUser);
+  },
+  updateUser: async (req: Request, res: Response) => {
+    const updatedUser = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    res.send(updatedUser);
+  },
+  deleteUser: async (req: Request, res: Response) => {
+    await User.findByIdAndDelete(req.params.id);
+    res.status(204).send();
+  }
+};
